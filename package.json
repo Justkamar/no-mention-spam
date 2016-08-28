@@ -1,0 +1,29 @@
+{
+  "name": "no-mention-spam",
+  "version": "1.0.0",
+  "description": "Bans any member that mentions more than 25 unique members in a single message.",
+  "main": "no-mention-spam.js",
+  "dependencies": {
+    "discord.js": "^7.0.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Evelyne Lachance",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eslachance/no-mention-spam.git"
+  },
+  "keywords": [
+    "spam",
+    "discord",
+    "antispam",
+    "mentions"
+  ],
+  "bugs": {
+    "url": "https://github.com/eslachance/no-mention-spam/issues"
+  },
+  "homepage": "https://github.com/eslachance/no-mention-spam#readme"
+}
