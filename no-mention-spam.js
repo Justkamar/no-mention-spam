@@ -1,8 +1,10 @@
 const Discord = require('discord.js');
+const moment = require("moment");
 const bot = new Discord.Client();
 const token = require('./auth.json').token;
 const sqlite = require('sqlite3');
 
+const time = moment().format("YYYY-MM-DD HH:mm:ss");
 const prefix = "🚫";
 
 bot.on('ready', () => {
@@ -18,7 +20,7 @@ bot.on('message', message => {
     message.guild.member(message.author).ban(1).then(() => {
       message.channel.sendMessage(`:no_entry_sign: User ${message.author.username} has just been banned for mentionning too many users. :hammer: 
 Users that have been mentioned, we apologize for the annoyance. Please don't be mad!`);
-      console.log(`Banned ${message.author.username} from ${message.guild.name}`);
+      console.log(`[${time}] Banned ${message.author.username} from ${message.guild.name}`);
     });
     return;
   }
