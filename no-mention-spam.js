@@ -1,8 +1,10 @@
 const Discord = require('discord.js');
+const moment = require("moment");
 const bot = new Discord.Client();
 const token = require('./auth.json').token;
 const sqlite = require('sqlite3');
 
+const time = moment().format("YYYY-MM-DD HH:mm:ss");
 const prefix = "🚫";
 
 bot.on('ready', () => {
@@ -11,7 +13,7 @@ bot.on('ready', () => {
 
 bot.on('message', message => {
   if(message.mentions.users.size > 25) {
-    message.guild.member(message.author).ban(1).then(() => console.log(`Banned ${message.author.username} from ${message.guild.name}`));
+    message.guild.member(message.author).ban(1).then(() => console.log(`[${time}] Banned ${message.author.username} from ${message.guild.name}`));
     return;
   }
   
