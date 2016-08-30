@@ -4,7 +4,8 @@
   "description": "Bans any member that mentions more than 25 unique members in a single message.",
   "main": "no-mention-spam.js",
   "dependencies": {
-    "discord.js": "^7.0.0"
+   "discord.js": "github:hydrabolt/discord.js#indev-rewrite",
+   "sqlite3": "^3.1.4"
   },
   "devDependencies": {},
   "scripts": {
