@@ -1,11 +1,14 @@
 const Discord = require('discord.js');
 const moment = require("moment");
 const bot = new Discord.Client();
-const token = require('./auth.json').token;
+const conf = require('./auth.json');
 const sqlite = require('sqlite3');
 
 const time = moment().format("YYYY-MM-DD HH:mm:ss");
-const prefix = "🚫";
+
+const prefix = conf.prefix;
+const token = conf.token;
+const ownerid = conf.ownerid;
 
 bot.on('ready', () => {
   console.log(`Ready to kick spammer's asses on ${bot.guilds.size} guilds.`);
@@ -37,7 +40,7 @@ Users that have been mentioned, we apologize for the annoyance. Please don't be 
     I am currently on ${bot.guilds.size} servers, kicking spammers' asses to hell and back!`);
   }
   
-  if(message.author.id !== "139412744439988224") return;
+  if(message.author.id !== ownerid) return;
   if(params[1] && params[1] === "eval") {
     try {
       var suffix = params.splice(2).join(" ");
