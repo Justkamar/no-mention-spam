@@ -6,6 +6,7 @@ Thumbs.db
 runfiles/
 rethinkdb_data/
 auth.json
+modlog.sqlite
 
 # C/C++
 *.slo

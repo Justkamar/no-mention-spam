@@ -1,11 +1,14 @@
-const Discord = require('discord.js');
 const moment = require("moment");
+const inspect = require("util").inspect();
+const request = require('superagent');
+
+const Discord = require('discord.js');
 const bot = new Discord.Client();
+
+const sqlite3 = require('sqlite3').verbose();
+const db = new sqlite3.Database('../omniself.sqlite');
+
 const conf = require('./auth.json');
-const sqlite = require('sqlite3');
-
-const time = moment().format("YYYY-MM-DD HH:mm:ss");
-
 const prefix = conf.prefix;
 const token = conf.token;
 const ownerid = conf.ownerid;
@@ -20,10 +23,26 @@ bot.on('guildCreate', (guild) => {
 
 bot.on('message', message => {
   if(message.mentions.users.size > 25) {
+    
+    // Add to ban log
+    var stmt = db.prepare(`INSERT INTO "banlog" (user_id, username, user_dump, mention_count, message_content, server_id, server_name, channel_id, channel_name) VALUES (?, ?)`);
+    stmt.run(message.author.id, message.author.username, inspect(message.author), message.mentions.users.size, message.content, message.guild.id, message.guild.name, message.channel.id, message.channel.name);
+    stmt.finalize();
+    
+    // Add to Discord Global Ban list
+    request
+    .post(conf.dbots.url + "/user")
+    .send({"id": message.author.id, "mentionCount": message.mentions.users.size, "notes": `Automatic ban by @no-mention-spam on ${message.guild.name}/#${message.channel.name}`})
+    .set('Authorization', conf.dbots.key)
+    .set('Accept', 'application/json')
+    .end(err => {
+        if (err) return console.error(err);
+    });
+    
     message.guild.member(message.author).ban(1).then(() => {
       message.channel.sendMessage(`:no_entry_sign: User ${message.author.username} has just been banned for mentionning too many users. :hammer: 
-Users that have been mentioned, we apologize for the annoyance. Please don't be mad!`);
-      console.log(`[${time}] Banned ${message.author.username} from ${message.guild.name}`);
+  Users that have been mentioned, we apologize for the annoyance. Please don't be mad!`);
+      console.log(`[${moment().format("YYYY-MM-DD HH:mm:ss")}] Banned ${message.author.username} from ${message.guild.name}`);
     });
     return;
   }
@@ -33,7 +52,7 @@ Users that have been mentioned, we apologize for the annoyance. Please don't be 
   var params = message.content.split(" ");
   console.log(params[0], params[1]);
   
-  if(params[1] && params[1] === "info") {
+  if(message.contents === conf.prefix + "info") {
     message.reply(`
     Hi! I'm no-mention-spam and I protect you against mention spams!
     To invite me to your server click here: http://tiny.cc/NOMentionspambot
@@ -41,7 +60,7 @@ Users that have been mentioned, we apologize for the annoyance. Please don't be 
   }
   
   if(message.author.id !== ownerid) return;
-  if(params[1] && params[1] === "eval") {
+  if(message.contents === conf.prefix + "eval") {
     try {
       var suffix = params.splice(2).join(" ");
       var evaled = eval(suffix);
