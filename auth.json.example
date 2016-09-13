@@ -1,5 +1,13 @@
 {
   "token" : "copyyourtokenhere",
+  "default_server_conf" : {
+    "prefix": "spambot.",
+    "kick_level": 15,
+    "ban_level": 25,
+    "modlog_channel": false,
+    "mod_role": false,
+    "get_blobal_bans": false,
+    "default": true
+  },
   "owner" : "YourID",
-  "prefix": "🚫"
 }
