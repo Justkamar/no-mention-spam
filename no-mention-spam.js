@@ -65,7 +65,7 @@ bot.on('message', message => {
 	  });
 	}
 
-  if(parseInt(conf.ban_level, 10) > 0 && message.mentions.users.size > parseInt(conf.ban_level, 10)) {
+  if(parseInt(conf.ban_level, 10) > 0 && message.mentions.users.size >= parseInt(conf.ban_level, 10)) {
 
     db.open('./modlog.sqlite').then(() => {
       db.run(`INSERT INTO "banlog" (user_id, username, user_dump, mention_count, message_content, server_id, server_name, channel_id, channel_name, log_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
@@ -84,7 +84,7 @@ bot.on('message', message => {
     return;
   }
 
-  if(parseInt(conf.kick_level, 10) > 0 && message.mentions.users.size > parseInt(conf.kick_level, 10)) {
+  if(parseInt(conf.kick_level, 10) > 0 && message.mentions.users.size >= parseInt(conf.kick_level, 10)) {
     let kick_msg = `${message.author.username} has been kicked for using too many mentions.`;
 
     db.open('./modlog.sqlite').then(() => {
