@@ -1,5 +1,3 @@
-//const sqlite3 = require('sqlite3').verbose();
-//const db = new sqlite3.Database('./modlog.sqlite');
 const db = require('sqlite');
 
 const serverconf = new Map();
@@ -7,16 +5,9 @@ const default_conf = require('./auth.json').default_server_conf;
 
 exports.init = (bot) => {
   db.open('./modlog.sqlite').then(() => db.all('SELECT * FROM server_configs')).then( rows => {
-    require('fs').writeFile('./dump.txt', require('util').inspect(rows));
-    for(const row of rows) {
-      serverconf.set(row.server_id, row);
-    }
+    for(const row of rows) serverconf.set(row.server_id, row);
     bot.guilds.forEach(guild => {
-      if(!serverconf.has(guild.id)) {
-        this.add(guild).then( conf => {
-          // nope.
-        }).catch(console.error);
-      }
+      if(!serverconf.has(guild.id)) this.add(guild).catch(console.error);
     });
   }).catch(console.error);
 };
@@ -24,7 +15,6 @@ exports.init = (bot) => {
 exports.add = (server) => {
   return new Promise( (resolve, reject) => {
     if(serverconf.has(server.id)) return reject(`Server is already in the configurations`);
-    //console.log(`INSERT INTO "server_configs" (server_id, server_name) VALUES ('${server.id}', '${server.name}')`)
     db.open('./modlog.sqlite').then(() => {
       db.run(`INSERT INTO "server_configs" (server_id, server_name) VALUES ('${server.id}', '${server.name}')`).then ( () => {
         let conf = default_conf;
@@ -58,8 +48,8 @@ exports.has = (serverid) => {
 exports.get = (server) => {
   if(serverconf.has(server.id)) {
     let server_conf = serverconf.get(server.id);
-  	const conf = {};
-  	if(server_conf) {
+    const conf = {};
+    if(server_conf) {
       for(let key in server_conf) {
         if(server_conf[key]) {
           conf[key] = server_conf[key];
@@ -68,8 +58,8 @@ exports.get = (server) => {
         }
       }
       conf["default"] = false;
-  	}
-  	return conf;
+    }
+    return conf;
   }
   else return default_conf;
 };
@@ -123,15 +113,26 @@ exports.set = (server, key, value) => {
       }
     }
     
-    //console.log(`Trying to set ${key} to ${value} in : \n${JSON.stringify(thisconf)}`)
+    if(key === "modlog_channel") {
+      const chan_by_name = server.channels.exists("name", String(value));
+      const chan_by_id = server.channels.exists("id", String(value));
+      if(chan_by_name) {
+        value = server.channels.find("name", value).id
+      } else
+      if (chan_by_id) {
+        value = value; // ¯\_(ツ)_/¯
+      } else {
+        console.error(`Channel not found`);
+        return reject(`:x: Could not find the specified channel. Use ID or name without the #`);
+      }
+    }
+    
     thisconf[key] = value;
     serverconf.set(serverid, thisconf);
     
     if(isNaN(value)) value = `'${value}'`;
     let query = `UPDATE "server_configs" SET ${key} = ${value} WHERE server_id = '${serverid}'`;
 
-    //console.log(query);
-    
     db.open('./modlog.sqlite').then(() => {
       db.run(`UPDATE "server_configs" SET ${key} = ${value} WHERE server_id = '${serverid}'`).then ( ()=> {
         resolve(`Done! :thumbsup:`);
@@ -142,12 +143,3 @@ exports.set = (server, key, value) => {
     });
   });
 };
-//{$key: key, $value: value, $serverid: serverid}
-
-process.on('uncaughtException', (err) => {
-  let errorMsg = err.stack.replace(new RegExp(`${__dirname}\/`, 'g'), './');
-  // bot.getDMChannel('175008284263186437').then(DMChannel => {
-  //   bot.createMessage(DMChannel.id, `\`UNCAUGHT EXCEPTION\`\n\`\`\`sh\n${errorMsg}\n\`\`\``);
-  // }).catch(error);
- console.error(errorMsg);
-});

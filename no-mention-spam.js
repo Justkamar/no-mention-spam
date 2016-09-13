@@ -1,13 +1,18 @@
+// Required external modules
 const moment = require("moment");
 const util = require("util");
 const request = require('superagent');
 
+// Load server configuration modules (database interaction)
 const confs = require('./serverconf.js');
 
+// Get Discord.js dependency
 const Discord = require('discord.js');
 const bot = new Discord.Client({autoReconnect: true, fetch_all_members: true});
 
+// some DB things are still done here. Let's load it (removed in the future)
 const db = require('sqlite');
+
 
 const settings = require('./auth.json');
 
@@ -17,12 +22,11 @@ bot.once('ready', () => {
   console.log(`Ready to kick spammer's asses on ${bot.guilds.size} guilds.`);
 });
 
-
 bot.on('guildCreate', (guild) => {
   console.log(`New guild has been joined: ${guild.name}`);
   confs.add(guild).then(console.log).catch(console.error);
   let server_owner = guild.owner;
-  server_owner.sendMessage(`Hi ${server_owner.user.username}! Sorry to bother you, but I kinda have to.
+  server_owner.sendMessage(`Hi ${server_owner.user.username}! Sorry to bother you!
 I'm a bot, see, that can only be configured, initially, by the server owner, to prevent tampering.
 Please use \`spambot.help\` to get a list of owner/mod commands. YOU are the only one who can set the \`mod_role\` configuration (name or id of role)
 Anyone with the role will be able to set the rest of the options.
@@ -62,35 +66,38 @@ bot.on('message', message => {
 	}
 
   if(parseInt(conf.ban_level, 10) > 0 && message.mentions.users.size > parseInt(conf.ban_level, 10)) {
-    // Add to ban log
-    /*
+
     db.open('./modlog.sqlite').then(() => {
-      db.run(`INSERT INTO "banlog" (user_id, username, user_dump, mention_count, message_content, server_id, server_name, channel_id, channel_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
-      [message.author.id, message.author.username, util.inspect(message.author), message.mentions.users.size, message.content, message.guild.id, message.guild.name, message.channel.id, message.channel.name]).then ( ()=> {
-        console.log(`done`);
+      db.run(`INSERT INTO "banlog" (user_id, username, user_dump, mention_count, message_content, server_id, server_name, channel_id, channel_name, log_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+      [message.author.id, message.author.username, util.inspect(message.author), message.mentions.users.size, message.content, message.guild.id, message.guild.name, message.channel.id, message.channel.name, "ban"]).then ( ()=> {
+        console.log(`[${moment().format("YYYY-MM-DD HH:mm:ss")}] Banned ${message.author.username} from ${message.guild.name}`);
       }).catch(console.error);
-    });*/
+    });
     
     // Add to Discord Global Ban list
     //if(settings.dbots.url) post_global_ban(message);
     
-    message.guild.member(message.author).ban(1).then(() => {
+    message.member.ban(1).then(() => {
       message.channel.sendMessage(`:no_entry_sign: User ${message.author.username} has just been banned for mentionning too many users. :hammer: 
   Users that have been mentioned, we apologize for the annoyance. Please don't be mad!`);
-      console.log(`[${moment().format("YYYY-MM-DD HH:mm:ss")}] Banned ${message.author.username} from ${message.guild.name}`);
     });
     return;
   }
 
   if(parseInt(conf.kick_level, 10) > 0 && message.mentions.users.size > parseInt(conf.kick_level, 10)) {
     let kick_msg = `${message.author.username} has been kicked for using too many mentions.`;
+
+    db.open('./modlog.sqlite').then(() => {
+      db.run(`INSERT INTO "banlog" (user_id, username, user_dump, mention_count, message_content, server_id, server_name, channel_id, channel_name, log_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+      [message.author.id, message.author.username, util.inspect(message.author), message.mentions.users.size, message.content, message.guild.id, message.guild.name, message.channel.id, message.channel.name, "ban"]).then ( ()=> {
+        console.log(`done`);
+      }).catch(console.error);
+    });
+
     message.member.ban().then(mem => message.guild.unban(mem.user)).then(() => {
       if(conf.modlog_channel) {
         message.guild.channels.get(conf.modlog_channel).sendMessage(kick_msg)
         .catch(console.error);
-      } else {
-        //message.channel.sendMessage(kick_msg)
-        //.catch(console.error);
       }
     })
     .catch(console.error);
@@ -256,7 +263,7 @@ Available configuration keys:
   mod_role - <RoleName> (false to disable)
     'the name of the role that has permission to change config besides the server owner.'
   modlog_channel - <ChannelID>
-    'the ID of the channel where mod logs should be posted (warn/kick/ban)'
+    'the ID of the channel where mod logs should be posted (warn/kick/ban). Bans always trigger a message regardless.'
   get_global_bans - <Boolean> (true/false)
     'whether to retrieve Dbans global bans for known mention spammers.'
 \`\`\``;
