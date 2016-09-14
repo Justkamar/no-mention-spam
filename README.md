@@ -23,7 +23,7 @@ I understand that due to the `ban` permission, not everyone would accept a 3rd p
 
 ### Pre-Requisites
 
-Due to the bot having been written in the Discord.js#indev-rewrite, it **requires Node 6 to run**. [Download it on windows](https://nodejs.org/en/) or [install it on linux](https://nodejs.org/en/download/package-manager/).
+Due to the bot having been written in the Discord.js#indev, it **requires Node 6 to run**. [Download it on windows](https://nodejs.org/en/) or [install it on linux](https://nodejs.org/en/download/package-manager/).
 
 ### Installing
 
