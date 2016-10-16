@@ -1,3 +1,7 @@
+/*----------------------/
+/  MODULES AND IMPORTS  /
+/----------------------*/
+
 // Required external modules
 const moment = require("moment");
 const util = require("util");
@@ -8,103 +12,95 @@ const confs = require('./serverconf.js');
 
 // Get Discord.js dependency
 const Discord = require('discord.js');
-const bot = new Discord.Client({autoReconnect: true, fetch_all_members: true});
+const bot = new Discord.Client({fetch_all_members: true});
 
 // some DB things are still done here. Let's load it (removed in the future)
 const db = require('sqlite');
-
+db.open('./modlog.sqlite');
 
 const settings = require('./auth.json');
 
-bot.once('ready', () => {
-  bot.user.setStatus('online', "Say: spambot.info");
-	confs.init(bot);
-  console.log(`Ready to kick spammer's asses on ${bot.guilds.size} guilds.`);
-});
 
-bot.on('guildCreate', (guild) => {
-  console.log(`New guild has been joined: ${guild.name}`);
-  confs.add(guild).then(console.log).catch(console.error);
-  let server_owner = guild.owner;
-  server_owner.sendMessage(`Hi ${server_owner.user.username}! Sorry to bother you!
-I'm a bot, see, that can only be configured, initially, by the server owner, to prevent tampering.
-Please use \`spambot.help\` to get a list of owner/mod commands. YOU are the only one who can set the \`mod_role\` configuration (name or id of role)
-Anyone with the role will be able to set the rest of the options.
-Again, this secures and simplifies the process and I'm sorry to bother you!`);
-});
+/*----------------------/
+/  MENTION HANDLING     /
+/----------------------*/
 
-const banned_ids = ["224418473286041601", "224426434339274752", "203868728884985857", "224431797533016064"];
-bot.on("guildMemberAdd", (guild, member) => {
-  console.log(`${member.user.username} ("${member.user.id}") joined ${guild.name}`);
-  if(banned_ids.includes(member.user.id)) {
-    member.ban().then( () =>{
-      console.log(`[${moment().format("YYYY-MM-DD HH:mm:ss")}] Pre-Emptively Banned ${member.user.username} from ${guild.name}`);
-    }).catch(console.error);
-  }
-})
-
-bot.on('guildDelete', (guild) => {
-  console.log(`[GUILD DELETED]: I've been removed from: ${guild.name}`);
-  confs.remove(guild).catch(console.error);
-});
+// H-DAT: Heuristic Decay Algorithm Thingy
+const slowmode = new Map();
+var ratelimit = 7000;
 
 bot.on('message', message => {
-  // Don't use 2 message handlers unless you know WHY!
-  // in this case, separation of "spam trigger" vs "commands"
   if(!message.guild) return;
-  
+  if(!message.member) return;
+  if(!message.guild.member(bot.user).hasPermission("BAN_MEMBERS")) return;
+  if(message.member.hasPermission("MANAGE_MESSAGES")) return;
+
 	var conf = confs.get("default");
 	if(message.guild) {
 	  conf = confs.get(message.guild);
 	}
 	
-	// Temporary (?) exception to this fucking asshole?
-	if(message.content.includes("👎Hillary👎")) {
-	  message.guild.member(message.author).ban(1).then(() => {
-	    console.log(`[${moment().format("YYYY-MM-DD HH:mm:ss")}] Banned ${message.author.username} from ${message.guild.name}`);
-	  });
-	}
+	if(message.mentions.users.size > 0) console.log(`[${moment().format("YYYY-MM-DD HH:mm:ss")}][MENTION][s${message.guild.id}][u${message.author.id}][m${message.mentions.users.size}] ${message.guild.name}/${message.channel.name}/${message.author.username} : [${message.mentions.users.first().id}]`);
 
-  if(parseInt(conf.ban_level, 10) > 0 && message.mentions.users.size >= parseInt(conf.ban_level, 10)) {
+  let entry = slowmode.get(message.author.id);
+  if(!entry) {
+    entry = {id: message.author.id, count: 0};
+    slowmode.set(message.author.id, entry);
+  }
+  entry.count += message.mentions.users.size;
 
-    db.open('./modlog.sqlite').then(() => {
-      db.run(`INSERT INTO "banlog" (user_id, username, user_dump, mention_count, message_content, server_id, server_name, channel_id, channel_name, log_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
-      [message.author.id, message.author.username, util.inspect(message.author), message.mentions.users.size, message.content, message.guild.id, message.guild.name, message.channel.id, message.channel.name, "ban"]).then ( ()=> {
-        console.log(`[${moment().format("YYYY-MM-DD HH:mm:ss")}] Banned ${message.author.username} from ${message.guild.name}`);
-      }).catch(console.error);
-    });
-    
-    // Add to Discord Global Ban list
-    //if(settings.dbots.url) post_global_ban(message);
-    
-    message.member.ban(1).then(() => {
+  if(entry.count > conf.ban_level) {
+    console.log(`[${message.guild.name}] ${message.author.username} spamming mentions x${entry.count}`);
+    ban_member(message, "ban").then( () => {
       message.channel.sendMessage(`:no_entry_sign: User ${message.author.username} has just been banned for mentionning too many users. :hammer: 
   Users that have been mentioned, we apologize for the annoyance. Please don't be mad!`);
+      console.log(`[${moment().format("YYYY-MM-DD HH:mm:ss")}][${message.author.id}] Banned ${message.author.username} from ${message.guild.name}`);
+    })
+    .catch(e => {
+      console.log(`[${moment().format("YYYY-MM-DD HH:mm:ss")}][${message.author.id}] Tried to ban ${message.author.username} from ${message.guild.name} but he has a higher role.`);
     });
+  }
+
+  setTimeout(()=> {
+    entry.count -= message.mentions.users.size;
+    if(entry.count <= 0) slowmode.delete(message.author.id);
+  }, ratelimit);
+	
+  if(parseInt(conf.ban_level, 10) > 0 && message.mentions.users.size >= parseInt(conf.ban_level, 10)) {
+
+    ban_member(message, "ban").then( () => {
+      message.channel.sendMessage(`:no_entry_sign: User ${message.author.username} has just been banned for mentionning too many users. :hammer: 
+  Users that have been mentioned, we apologize for the annoyance. Please don't be mad!`);
+      log_action("BANNED", message.guild.id, `Banned ${message.author.username} from ${message.guild.name} for mentioning too many users (${message.mentions.users.size}).`);
+    })
+    .catch(e => {
+      log_action("BAN FAIL", message.guild.id, `Tried to ban ${message.author.username} from ${message.guild.name} but they have a higher role.`);
+    });
+
     return;
   }
 
   if(parseInt(conf.kick_level, 10) > 0 && message.mentions.users.size >= parseInt(conf.kick_level, 10)) {
-    let kick_msg = `${message.author.username} has been kicked for using too many mentions.`;
+    let kick_msg = `[${moment().format("YYYY-MM-DD HH:mm:ss")}][${message.author.id}] ${message.author.username} has been kicked for using too many mentions.`;
 
-    db.open('./modlog.sqlite').then(() => {
-      db.run(`INSERT INTO "banlog" (user_id, username, user_dump, mention_count, message_content, server_id, server_name, channel_id, channel_name, log_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
-      [message.author.id, message.author.username, util.inspect(message.author), message.mentions.users.size, message.content, message.guild.id, message.guild.name, message.channel.id, message.channel.name, "ban"]).then ( ()=> {
-        console.log(`done`);
-      }).catch(console.error);
-    });
-
-    message.member.ban().then(mem => message.guild.unban(mem.user)).then(() => {
+    ban_member(message, "kick").then( () => {
+      log_action("KICKED", message.guild.id, `Kicked ${message.author.username} from ${message.guild.name} for mentioning too many users (${message.mentions.users.size}).`);
       if(conf.modlog_channel) {
         message.guild.channels.get(conf.modlog_channel).sendMessage(kick_msg)
         .catch(console.error);
       }
     })
-    .catch(console.error);
-    return;
+    .catch(e => {
+      log_action("KICK FAIL", message.guild.id, `Tried to kick ${message.author.username} from ${message.guild.name} but they have a higher role.`);
+    });
   }
-
 });
+
+
+
+/*----------------------/
+/  COMMAND HANDLING     /
+/----------------------*/
 
 bot.on('message', message => {
   if(message.author.bot) return;
@@ -112,8 +108,11 @@ bot.on('message', message => {
 	var conf = confs.get("default");
 	if(message.guild) {
 	  conf = confs.get(message.guild);
-    //console.log(`<${message.guild.name}> #${message.channel.name} ; ${message.author.username}:  ${message.content}`);
 	}
+	
+  if(!message.guild) {
+    log_action("PM", message.author.id, message.author.username, message.content);
+  }
 	
   if(!message.content.startsWith(conf.prefix) && !message.content.startsWith(settings.default_server_conf.prefix)) return;
   
@@ -121,19 +120,24 @@ bot.on('message', message => {
   if(command.startsWith(conf.prefix)) command = command.replace(conf.prefix, "");
   if(command.startsWith(settings.default_server_conf.prefix)) command = command.replace(settings.default_server_conf.prefix, "");
   var params = message.content.split(" ");
-  
+	if(["info", "help", "invite", "conf", "eval"].indexOf(command) < 0) return;
+
   if(command === "info") {
     return message.channel.sendMessage(`Hi ${message.author.username}!
     I'm no-mention-spam and I protect you against mention spams!
-    I am currently on ${bot.guilds.size} servers, and was created by LuckyEvie#4611 (139412744439988224)`);
+    I am currently on ${bot.guilds.size} servers, and was created by LuckyEvie#4611 (139412744439988224)
+    Check out the \`help\` and \`invite\` commands!`);
   }
   
   if(command === "invite") {
     return message.channel.sendMessage(`To invite this bot:
-    <https://discordapp.com/oauth2/authorize?client_id=219487222913695754&scope=bot&permissions=4>
-    For support, join https://discord.gg/7x4JmsH !`)
+    <https://discordapp.com/oauth2/authorize?client_id=219487222913695754&scope=bot&permissions=4>`);
   }
-  
+
+  if(command === "help") {
+    return message.channel.sendMessage(help_message);
+  }
+
   // eh, I have to put this before server check so I can do private evals. So sue me.
   if(message.author.id === settings.ownerid && command === "eval") {
     try {
@@ -151,32 +155,27 @@ bot.on('message', message => {
   }
 
   if(!message.guild) {
-    message.author.sendMessage(`For info please type \`spambot.info\`. Any other command needs to be done in a server where this bot is located!`);
-    return console.log(`Private Message from ${message.author.username} : \n  ${message.content}`);
+    return message.author.sendMessage(`Configuration commands must be used inside a server you share with the bot.`);
   }
 
   // check perms
   // MOD Commands
   try{ 
-  //console.log(conf.mod_role);
-  let mod_role = conf.mod_role ? conf.mod_role : null;
-  let server_owner = message.guild.owner.id;
-  var perm_level = 0;
-  if(mod_role && message.member.roles.exists("id", mod_role)) perm_level = 1;
-  if(message.author.id === "68396159596503040") perm_level = 1; // I see you, Carbonitex (Matt).
-  if(message.author.id === server_owner) perm_level = 2;
-  if(message.author.id === settings.ownerid) perm_level = 3;
+    //console.log(conf.mod_role);
+    let mod_role = conf.mod_role ? conf.mod_role : null;
+    let server_owner = message.guild.owner.id;
+    var perm_level = 0;
+    if(mod_role && message.member.roles.exists("id", mod_role)) perm_level = 1;
+    if(message.author.id === "68396159596503040") perm_level = 1; // I see you, Carbonitex (Matt).
+    if(message.author.id === server_owner) perm_level = 2;
+    if(message.author.id === settings.ownerid) perm_level = 3;
   } catch (e) {
-    console.error(e);
+    console.error(`Error while catching roles and perms: ${e}`);
   }
-  console.log(`Command ${params[0]} called by ${message.author.username}(${message.author.id}) in ${message.guild.name}:\n  ${message.content}`);
-
-  if(command === "help") {
-    message.author.sendMessage(help_message);
-    if(message.guild) message.reply(`Please check Direct Messages for help!`);
-    return;
-  }
-
+  log_action("CONF", message.author.id, `${message.author.username} in ${message.guild.name}`, message.content);
+  return message.reply(`Due to a possible bug in the conf system it is disabled until further notice.
+**Your server is still protected** but conf remains default or your previously set values for the time being. Apologies for the inconvenience.`);
+/*
   if(perm_level < 1) return;
   // MOD_ROLE COMMANDS
   //console.log(params);
@@ -198,18 +197,97 @@ bot.on('message', message => {
       console.error(e);
     });
   }
-  
-  if(command == "conf" && conf_cmd == "view") {
+  if(command == "conf" && (conf_cmd == "view" || conf_cmd == "")) {
     return message.channel.sendMessage(make_conf(conf, message));
   }
+*/  
   
 });
 
+bot.login(settings.token);
+
+/*-----------------/
+/  GENERIC EVENTS  /
+/-----------------*/
+
+bot.once('ready', () => {
+  bot.user.setStatus('online', "Say: spambot.info");
+	confs.init(bot);
+  log_action("READY", bot.user.id, `Ready to kick spammer's asses on ${bot.guilds.size} guilds.`);
+  post_dbots_server_count();
+  setInterval(()=> {
+    post_carbonitex_server_count();
+  }, 3600000);
+});
+
+bot.on('guildCreate', (guild) => {
+  if(!guild.available) return;
+  log_action("GUILD CREATE", guild.id, guild.name);
+  confs.add(guild).catch(console.error);
+  let server_owner = guild.owner;
+  server_owner.sendMessage(`Hi ${server_owner.user.username}! Sorry to bother you!
+I'm a bot, see, that can only be configured, initially, by the server owner, to prevent tampering.
+Please use \`spambot.help\` on your server to get a list of owner/mod commands. 
+YOU are the only one who can set the \`mod_role\` configuration (name or id of role).
+Anyone with the role will be able to set the rest of the options.
+**IMPORTANT NOTE**: Without *Ban Member* privilege, I can't function, I'm useless, and I will leave your server.`);
+});
+
+
+bot.on('guildDelete', (guild) => {
+  if(!guild.available) return;
+  log_action("GUILD DELETE", guild.id, guild.name);
+  confs.remove(guild).catch(console.error);
+});
+
 bot.on('error', (error) => {
-  console.error(error);
+  console.error(error.status, error.Error);
+  //console.error(error);
 })
 
-bot.login(settings.token);
+
+/*----------------------/
+/  "GLOBAL" FUNCTIONS   /
+/----------------------*/
+
+function log_action(type, id, message, details) {
+  let time = moment().format("YYYY-MM-DD HH:mm:ss");
+  details = details && details.length > 0 ? `\n \`\`\`${details}\`\`\`` : "";
+  return console.log(`\`[${time}][${id}][${type}]\` ${message}${details}`);
+}
+
+function ban_member(message, type) {
+  return new Promise( (resolve, reject) => {
+    db.run(`INSERT INTO "modlog" (user_id, username, user_dump, mention_count, message_content, server_id, server_name, channel_id, channel_name, log_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+    [message.author.id, message.author.username, util.inspect(message.author), message.mentions.users.size, message.content, message.guild.id, message.guild.name, message.channel.id, message.channel.name, type]).then ( ()=> {
+    }).catch(console.error);
+
+    // Add to Discord Global Ban list
+    //if(settings.dbans.url) post_global_ban(message);
+
+    message.member.ban(1).then( member=> {
+      if(type === "kick") {
+        message.guild.unban(member.user.id);
+      }
+      resolve();
+    })
+    .catch(reject);
+  });
+}
+
+function ban_from_all(id) {
+  bot.guilds.forEach(g=>g.ban(id));
+}
+
+function user_in_servers(id, channel) {
+  let user = bot.users.get(id);
+  let servers = bot.guilds.filter(g=>g.members.has(id)).map(g=>g.name);
+  if(servers.length > 0) {
+    channel.sendMessage(`[USER FOUND] [${user.username}]: \n \`\`\`${servers.join("\n")}\`\`\``);
+  } else {
+    channel.sendMessage(`USER NOT FOUND IN ANY SERVER`);
+  }
+}
 
 function clean(text) {
   if (typeof(text) === "string") {
@@ -231,12 +309,35 @@ function post_global_ban(message) {
   });
 }
 
+function post_dbots_server_count() {
+  request
+  .post(`https://bots.discord.pw/api/bots/219487222913695754/stats`)
+  .send(`{"server_count": ${bot.guilds.size}}`)
+  .type('application/json')
+  .set('Authorization', settings.dbots.key)
+  .set('Accept', 'application/json')
+  .end(err => {
+      if (err) return console.error(err);
+  });
+}
+
+function post_carbonitex_server_count() {
+  request
+  .post(`https://www.carbonitex.net/discord/data/botdata.php`)
+  .send(`{"key": "${settings.carbon.key}", "servercount": ${bot.guilds.size}}`)
+  .type('application/json')
+  .set('Accept', 'application/json')
+  .end(err => {
+      if (err) return console.error(err);
+  });
+}
+
 const help_message = `\`\`\`xl
 COMMAND HELP
-Assumes you have not changed the default prefix
 
-spambot.info - Displays basic bot info and invite link.
-spambot.help - Displays this help (no, really!)
+spambot.info   - Displays basic bot info and invite link.
+spambot.invite - Displays bot invite link and server link.
+spambot.help   - Displays this help (no, really!)
 
 Server Owner / mod_role useable only: 
 spambot.conf - Configure the server settings
@@ -251,11 +352,10 @@ Example:
   spambot.conf set ban_level 10
   spambot.conf set prefix >
   >invite
-  (because prefix changed)
 
 Available configuration keys: 
   prefix - <String> (false to reset)
-    'custom server prefix. Disables the default "spambot." prefix.'
+    'custom server prefix. the "spambot." prefix always works regardless.'
   kick_level - <Int> (0 to disable, Default 10)
     'mention count at which to kick the user from the server.'
   ban_level - <Int> (min 2, Default 15)
@@ -265,7 +365,7 @@ Available configuration keys:
   modlog_channel - <ChannelID>
     'the ID of the channel where mod logs should be posted (warn/kick/ban). Bans always trigger a message regardless.'
   get_global_bans - <Boolean> (true/false)
-    'whether to retrieve Dbans global bans for known mention spammers.'
+    'set to "true" to automatically ban known spammers from your server.'
 \`\`\``;
 
 function make_conf(conf, message) {
@@ -283,11 +383,3 @@ modlog_channel : ${conf.modlog_channel}
 get_global_bans: ${conf.get_global_bans}
 \`\`\``;
 }
-
-process.on('uncaughtException', (err) => {
-  let errorMsg = err.stack.replace(new RegExp(`${__dirname}\/`, 'g'), './');
-  // bot.getDMChannel('175008284263186437').then(DMChannel => {
-  //   bot.createMessage(DMChannel.id, `\`UNCAUGHT EXCEPTION\`\n\`\`\`sh\n${errorMsg}\n\`\`\``);
-  // }).catch(error);
- console.error(errorMsg);
-});

@@ -1,85 +1,82 @@
-const db = require('sqlite');
+const db = require('sqlite')
+db.open('./modlog.sqlite');
 
-const serverconf = new Map();
+const guildconf = new Map();
 const default_conf = require('./auth.json').default_server_conf;
 
 exports.init = (bot) => {
-  db.open('./modlog.sqlite').then(() => db.all('SELECT * FROM server_configs')).then( rows => {
-    for(const row of rows) serverconf.set(row.server_id, row);
-    bot.guilds.forEach(guild => {
-      if(!serverconf.has(guild.id)) this.add(guild).catch(console.error);
-    });
-  }).catch(console.error);
-};
-
-exports.add = (server) => {
-  return new Promise( (resolve, reject) => {
-    if(serverconf.has(server.id)) return reject(`Server is already in the configurations`);
-    db.open('./modlog.sqlite').then(() => {
-      db.run(`INSERT INTO "server_configs" (server_id, server_name) VALUES ('${server.id}', '${server.name}')`).then ( () => {
-        let conf = default_conf;
-        conf.server_id = server.id;
-        conf.server_name = server.name;
-        serverconf.set(server.id, conf);
-        resolve();
-      }).catch(reject);
-    });
-  });
-};
-
-exports.remove = (server) => {
-  return new Promise( (resolve, reject) => {
-    if(!serverconf.has(server.id)) return reject();
-    db.open('./modlog.sqlite').then( () => {
-      db.run(`DELETE FROM "server_configs" WHERE server_id = ?`, [server.id])
-        .then(() => {
-          serverconf.delete(server.id);
-          resolve();
-        })
-        .catch(reject);
-    });
-  });
-};
-
-exports.has = (serverid) => {
-  return serverconf.has(serverid);
-};
-
-exports.get = (server) => {
-  if(serverconf.has(server.id)) {
-    let server_conf = serverconf.get(server.id);
-    const conf = {};
-    if(server_conf) {
-      for(let key in server_conf) {
-        if(server_conf[key]) {
-          conf[key] = server_conf[key];
-        } else {
-          conf[key] = default_conf[key];
-        }
-      }
-      conf["default"] = false;
+  db.all('SELECT * FROM server_configs').then( rows => {
+    for(const row of rows) { 
+      guildconf.set(row.server_id, row);
     }
+    bot.guilds.forEach(guild => {
+      if(!guildconf.has(guild.id)) {
+        console.log(`Guild ${guild.name} (${guild.id}) isn't in the database. Adding.`);
+        this.add(guild).then(conf => guildconf.set(guild.id, conf)).catch(console.error);
+      }
+    });
+  })
+  .catch( (e) => console.error(`Error on init: ${e}`));
+};
+
+exports.add = (guild) => {
+  return new Promise( (resolve, reject) => {
+    if(guildconf.has(guild.id)) return reject(`guild is already in the configurations`);
+    let server_name = guild.name.replace("'", "''", 'g');
+    db.run(`INSERT INTO server_configs (server_id, server_name) VALUES (?, ?)`, [guild.id , server_name]).then ( () => {
+      let conf = default_conf;
+      conf.server_id = guild.id;
+      conf.server_name = guild.name;
+      guildconf.set(guild.id, conf);
+      resolve(conf);
+    }).catch(reject);
+  });
+};
+
+exports.remove = (guild) => {
+  return new Promise( (resolve, reject) => {
+    if(!guildconf.has(guild.id)) return reject();
+    db.run(`DELETE FROM server_configs WHERE server_id = ?`, [guild.id])
+      .then(() => {
+        guildconf.delete(guild.id);
+        resolve();
+      })
+      .catch(reject);
+  });
+};
+
+exports.has = (guildid) => {
+  return guildconf.has(guildid);
+};
+
+exports.get = (guild) => {
+  if(guildconf.has(guild.id)) {
+    let guild_conf = guildconf.get(guild.id);
+    const conf = {};
+    for(let key in guild_conf) {
+      if(guild_conf[key]) conf[key] = guild_conf[key];
+      else conf[key] = default_conf[key];
+    }
+    conf.default = false;
     return conf;
   }
   else return default_conf;
 };
 
-exports.set = (server, key, value) => {
+exports.set = (guild, key, value) => {
   return new Promise( (resolve, reject) => {
     
-    //fml
-    value = value.replace(/[';]/g, '');
-    key = key.replace(/[';]]/g, '');
+    value = value.replace("'", "''", 'g');
     
-    let serverid = server.id;
-    if(!serverconf.has(server.id)) {
-     reject(`:x: The server ${serverid} not found while trying to set ${key} to ${value}`);
+    let guildid = guild.id;
+    if(!guildconf.has(guild.id)) {
+     reject(`:x: The guild ${guildid} not found while trying to set ${key} to ${value}`);
      return;
     }
     
-    var thisconf = serverconf.get(server.id);
+    var thisconf = guildconf.get(guild.id);
     if(!(key in thisconf)) {
-     reject(`:x: The key \`${key}\` was not found in the configuration for ${server.name}.`);
+     reject(`:x: The key \`${key}\` was not found in the configuration for ${guild.name}.`);
      return;
     }
 
@@ -98,26 +95,26 @@ exports.set = (server, key, value) => {
       if(!typeof JSON.parse(value) === "boolean") return reject(`:x: The key \`${key}\` value must resolve to boolean.`);
     }
     if(key === "mod_role") {
-      const role = server.roles.exists("name", String(value));
-      const role_by_id = server.roles.exists("id", String(value));
+      const role = guild.roles.exists("name", String(value));
+      const role_by_id = guild.roles.exists("id", String(value));
       if(role) {
         console.log(`Found role by name!`);
-        value = server.roles.find("name", value).id;
+        value = guild.roles.find("name", value).id;
       } else
       if(role_by_id) {
         console.log(`Found role by ID!`);
         value = value; // ¯\_(ツ)_/¯
       } else {
         console.error(`Role not found`);
-        return reject(`:x: Could not find the specified role. Note: roles are case-sensitive`);
+        return reject(`:x: Could not find the specified role. Use ID or role name (not a mention). Role names are case sensitives.`);
       }
     }
     
     if(key === "modlog_channel") {
-      const chan_by_name = server.channels.exists("name", String(value));
-      const chan_by_id = server.channels.exists("id", String(value));
+      const chan_by_name = guild.channels.exists("name", String(value));
+      const chan_by_id = guild.channels.exists("id", String(value));
       if(chan_by_name) {
-        value = server.channels.find("name", value).id
+        value = guild.channels.find("name", value).id
       } else
       if (chan_by_id) {
         value = value; // ¯\_(ツ)_/¯
@@ -128,18 +125,16 @@ exports.set = (server, key, value) => {
     }
     
     thisconf[key] = value;
-    serverconf.set(serverid, thisconf);
+    guildconf.set(guildid, thisconf);
     
     if(isNaN(value)) value = `'${value}'`;
-    let query = `UPDATE "server_configs" SET ${key} = ${value} WHERE server_id = '${serverid}'`;
+    let query = `UPDATE server_configs SET ${key} = ${value} WHERE server_id = '${guildid}'`;
 
-    db.open('./modlog.sqlite').then(() => {
-      db.run(`UPDATE "server_configs" SET ${key} = ${value} WHERE server_id = '${serverid}'`).then ( ()=> {
-        resolve(`Done! :thumbsup:`);
-      }).catch((e) => {
-        console.error(e);
-        reject(`Could not update database key.`);
-      });
+    db.run(`UPDATE server_configs SET ${key} = ${value} WHERE server_id = '${guildid}'`).then ( ()=> {
+      resolve(`Done! :thumbsup:`);
+    }).catch((e) => {
+      console.error(`Could not set value: ${e}`);
+      reject(`Could not update database key.`);
     });
   });
 };
